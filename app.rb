@@ -1,5 +1,6 @@
 require 'sinatra'
 require 'sinatra-initializers'
+require 'singleton'
 
 register Sinatra::Initializers
 
@@ -8,15 +9,20 @@ get '/' do
 end
 
 get '/connect' do
-  if kindle = KindleKeep.new(EMAIL, PASS)
-    kindle.log_in
-    kindle.get_highlights if kindle.login_successful?
+
+  Thread.new do
+    kindle = KindleKeep.instance
+    if kindle.connect(EMAIL, PASS)
+      kindle.log_in
+      kindle.get_highlights if kindle.login_successful?
+    end
   end
-  redirect '/success'
+
+  redirect '/fetching'
 end
 
-get '/success' do
-  "Success!"
+get '/fetching' do
+  "Fetching Kindle highlights..."
 end
 
 
@@ -24,8 +30,9 @@ end
 # Class: Connects to amazon kindle, gets highlights
 # =================================================
 class KindleKeep
+  include Singleton
 
-  def initialize(email, pass)
+  def connect(email, pass)
     @email, @pass = email, pass
     new_session
     @session.visit(KINDLE_HOME)
@@ -67,6 +74,8 @@ class KindleKeep
 
     log_current_path if has_selector?(:css, "#allHighlightedBooks")
 
+    scroll_to_bottom
+
     # Each row can be a heading marking the start of a new book, or it can
     # be a highlight. So as we progress down the rows we need to keep track
     # of the current book for each highlight.
@@ -84,6 +93,37 @@ class KindleKeep
       end
     end
     puts "\n\nTotal highlights found: #{count.to_s}\n\n"
+  end
+
+  def scroll_to_bottom
+    item_count = all(:css, ".highlight").count
+    new_count = 0
+    puts "found #{item_count} items"
+
+    begin
+      item_count = all(:css, ".highlight").count
+      puts "scrolling down..."
+      execute_script('window.scrollTo(0,document.body.scrollHeight)')
+      new_count = wait_for_new_highlights_to_load(item_count)
+    end while new_count > item_count
+
+    puts "\n==========\nDone. Found #{item_count} items total.\n==========\n"
+  end
+
+  # Check to see if new highlights loaded every second. Break when the new
+  # highlights load of 10 seconds pass.
+  def wait_for_new_highlights_to_load(item_count)
+    new_count = 0
+    t = 0
+    begin
+      sleep 1
+      t = t + 1
+      new_count = all(:css, ".highlight").count
+      if new_count > item_count
+        puts "Found #{new_count - item_count} new items. #{new_count} total.\n"
+      end
+    end while new_count == item_count && t < 10
+    new_count
   end
 
   def is_book_title?(row)
