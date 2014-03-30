@@ -9,8 +9,11 @@ get '/' do
 end
 
 post '/connect' do
-  email = params[:email]
-  pass  = params[:password]
+  email, pass = params[:email], params[:password]
+
+  if email.empty? || pass.empty?
+    redirect '/?error=true'
+  end
 
   Thread.new do
     kindle = KindleKeep.instance
