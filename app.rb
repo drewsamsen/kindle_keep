@@ -34,34 +34,64 @@ class KindleKeep
 
   def log_in
 
+    log_current_path
+
     find("#sidepanelSignInButton a").click
 
-    if has_content?('What is your e-mail address?')
-      puts "on login page..."
-    else
-      puts "WARNING: not on the login page as expected..."
-    end
+    log_current_path if has_content?('What is your e-mail address?')
 
     # Log in
     if has_selector?(:css, '#ap_signin_form')
-      puts "login form located..."
-      puts "fill in name"
       find(:css, '#ap_email').set(@email)
-      puts "select radio"
       choose("ap_signin_existing_radio")
-      puts "password"
       find(:css, '#ap_password').set(@pass)
       puts "submit"
       find('#signInSubmit').click
+      puts "Logging in..."
     end
 
     # Check if authentication was a success
     puts login_successful? ? "You're in! authenticated." : "ERROR: Authentication failed"
+    log_current_path
     save_html_as_instance_variable
   end
 
   def get_highlights
-    puts "lets get some highlights, bitches!!!1"
+    puts "lets get some highlights, bitches!!!1\n"
+    click_link "Your Highlights"
+
+    title = String.new
+    author = String.new
+    highlight = Hash.new
+    count = 0
+
+    log_current_path if has_selector?(:css, "#allHighlightedBooks")
+
+    # Each row can be a heading marking the start of a new book, or it can
+    # be a highlight. So as we progress down the rows we need to keep track
+    # of the current book for each highlight.
+    all(:css, "#allHighlightedBooks > div").each do |row|
+      if is_book_title?(row)
+        title = row.find(:css, ".title").text
+        author = row.find(:css, ".author").text
+      elsif is_highlight?(row)
+        highlight[:title] = title
+        highlight[:author] = author
+        highlight[:highlight] = row.find(:css, ".highlight").text
+        count = count + 1
+        puts "#{ highlight[:highlight] }\n"
+        puts "- #{highlight[:title]}, #{highlight[:author]}\n\n"
+      end
+    end
+    puts "\n\nTotal highlights found: #{count.to_s}\n\n"
+  end
+
+  def is_book_title?(row)
+    row[:class].match(/yourHighlightsHeader/)
+  end
+
+  def is_highlight?(row)
+    row[:class].match(/yourHighlight/)
   end
 
   # To save ourselves calling each of the capybara methods on the instance
@@ -110,6 +140,10 @@ private
 
   def save_html_as_instance_variable
     @page = Nokogiri::HTML.parse(html)
+  end
+
+  def log_current_path
+    puts "#{@session.current_url}\n"
   end
 
 end
