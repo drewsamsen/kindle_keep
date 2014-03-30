@@ -5,7 +5,11 @@
 
 %form{method: "post", action: "/connect"}
   %p Amazon credentials:
-  %input{type: "text", name: "email", placeholder: "email", value: (EMAIL rescue nil)}
-  %input{type: "password", name: "password", placeholder: "password", value: (PASS rescue nil)}
+  %p
+    %input{type: "text", name: "email", placeholder: "email", value: (EMAIL rescue nil)}
+    %input{type: "password", name: "password", placeholder: "password", value: (PASS rescue nil)}
+  %p
+    Fetch how many? (leave empty for all)
+    %input{type: "text", name: "limit"}
   %p
     %button{type: "submit"} Connect &amp; Get Highlights

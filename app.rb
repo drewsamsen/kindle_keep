@@ -8,7 +8,9 @@ get '/' do
 end
 
 post '/connect' do
-  email, pass = params[:email], params[:password]
+  email = params[:email]
+  pass  = params[:password]
+  limit = params[:limit].empty? ? 9999999 : params[:limit].to_i
 
   if email.empty? || pass.empty?
     redirect '/?error=true'
@@ -18,7 +20,7 @@ post '/connect' do
     kindle = KindleKeep.instance
     if kindle.connect(email, pass)
       kindle.log_in
-      kindle.get_highlights if kindle.login_successful?
+      kindle.get_highlights(limit) if kindle.login_successful?
     end
   end
 

@@ -35,7 +35,7 @@ class KindleKeep
     save_html_as_instance_variable
   end
 
-  def get_highlights
+  def get_highlights(limit)
     puts "lets get some highlights, bitches!!!1\n"
     click_link "Your Highlights"
 
@@ -46,7 +46,7 @@ class KindleKeep
 
     log_current_path if has_selector?(:css, "#allHighlightedBooks")
 
-    scroll_to_bottom
+    scroll_to_bottom(limit)
 
     # Each row can be a heading marking the start of a new book, or it can
     # be a highlight. So as we progress down the rows we need to keep track
@@ -63,21 +63,24 @@ class KindleKeep
         puts "#{ highlight[:highlight] }\n"
         puts "- #{highlight[:title]}, #{highlight[:author]}\n\n"
       end
+      break if count >= limit
     end
     puts "\n\nTotal highlights found: #{count.to_s}\n\n"
   end
 
-  def scroll_to_bottom
+  def scroll_to_bottom(limit)
     item_count = all(:css, ".highlight").count
     new_count = 0
     puts "found #{item_count} items"
+
+    puts "limit is: #{limit}"
 
     begin
       item_count = all(:css, ".highlight").count
       puts "scrolling down..."
       execute_script('window.scrollTo(0,document.body.scrollHeight)')
       new_count = wait_for_new_highlights_to_load(item_count)
-    end while new_count > item_count
+    end while new_count > item_count && new_count < (limit+50)
 
     puts "\n==========\nDone. Found #{item_count} items total.\n==========\n"
   end
