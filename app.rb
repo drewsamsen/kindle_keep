@@ -1,6 +1,5 @@
 require 'sinatra'
 require 'sinatra-initializers'
-require 'singleton'
 
 register Sinatra::Initializers
 
