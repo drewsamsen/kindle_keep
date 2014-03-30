@@ -8,11 +8,13 @@ get '/' do
   haml :index
 end
 
-get '/connect' do
+post '/connect' do
+  email = params[:email]
+  pass  = params[:password]
 
   Thread.new do
     kindle = KindleKeep.instance
-    if kindle.connect(EMAIL, PASS)
+    if kindle.connect(email, pass)
       kindle.log_in
       kindle.get_highlights if kindle.login_successful?
     end

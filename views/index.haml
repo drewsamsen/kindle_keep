@@ -1,4 +1,9 @@
 #content
-  %h1 Hello World
+  %h1 Fetch Kindle Highlights
 
-  %a{href: "/connect"} Connect
+  %form{method: "post", action: "/connect"}
+    %p Amazon credentials:
+    %input{type: "text", name: "email", placeholder: "email", value: (EMAIL rescue nil)}
+    %input{type: "password", name: "password", placeholder: "password", value: (PASS rescue nil)}
+    %p
+      %button{type: "submit"} Connect &amp; Get Highlights
