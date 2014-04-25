@@ -1,0 +1,8 @@
+TODO:
+
+- write and update a summary.json file
+- show total elapsed time for the fetching of highlights process
+- make a UI for reading,filtering,searching the highlights
+- better organized code. services?
+- write to json files during the fetch process instead of all after
+- cache the opening and parsing of existing highlight files. readuce reads.
