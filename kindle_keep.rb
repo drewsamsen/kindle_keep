@@ -1,3 +1,7 @@
+require 'FileUtils'
+require 'json'
+require 'digest/md5'
+
 # =================================================
 # Class: Connects to amazon kindle, gets highlights
 # =================================================
@@ -6,6 +10,8 @@ class KindleKeep
 
   def connect(email, pass)
     @email, @pass = email, pass
+    @highlights   = Array.new
+    @books        = Hash.new
     new_session
     @session.visit(KINDLE_HOME)
     save_html_as_instance_variable
@@ -41,7 +47,6 @@ class KindleKeep
 
     title = String.new
     author = String.new
-    highlight = Hash.new
     count = 0
 
     log_current_path if has_selector?(:css, "#allHighlightedBooks")
@@ -54,18 +59,60 @@ class KindleKeep
     all(:css, "#allHighlightedBooks > div").each do |row|
       if is_book_title?(row)
         title = row.find(:css, ".title").text
-        author = row.find(:css, ".author").text
+        @books[title] = Array.new
+        author = row.find(:css, ".author").text.gsub(/^by /,'')
       elsif is_highlight?(row)
-        highlight[:title] = title
-        highlight[:author] = author
-        highlight[:highlight] = row.find(:css, ".highlight").text
+        body = row.find(:css, ".highlight").text
+        @books[title] << {
+          :title => title,
+          :author => author,
+          :highlight => body,
+          :guid => Digest::MD5.hexdigest(body)
+        }
         count = count + 1
-        puts "#{ highlight[:highlight] }\n"
-        puts "- #{highlight[:title]}, #{highlight[:author]}\n\n"
       end
       break if count >= limit
     end
     puts "\n\nTotal highlights found: #{count.to_s}\n\n"
+    # show_highlights
+    write_highlights_to_file
+    write_summary_file
+  end
+
+  # def show_highlights
+  #   @highlights.each do |highlight|
+  #     puts "#{ highlight[:highlight] }\n"
+  #     puts "- #{highlight[:title]}, #{highlight[:author]}\n\n"
+  #   end
+  # end
+
+  def write_highlights_to_file
+    Dir.mkdir("./highlights") unless directory_already_exists_at("./highlights")
+    @books.each do |title, highlights|
+      File.open("./highlights/#{title}.json", 'w') do |file|
+        file.write(JSON.pretty_generate(highlights))
+      end
+    end
+  end
+
+  def write_summary_file
+    summary = {
+      total: @highlights.size,
+      books: Array.new
+    }
+    @books.each do |title, highlights|
+      summary.books << {
+        title: title,
+        highlights: highlights.size
+      }
+    end
+    File.open("./highlights/summary.json", 'w') do |file|
+      file.write(JSON.pretty_generate(summary))
+    end
+  end
+
+  def directory_already_exists_at(path)
+    File.exists?(path) && File.directory?(path)
   end
 
   def scroll_to_bottom(limit)
