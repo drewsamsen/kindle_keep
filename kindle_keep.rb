@@ -1,4 +1,3 @@
-require 'FileUtils'
 require 'json'
 require 'digest/md5'
 
@@ -48,6 +47,7 @@ class KindleKeep
     title = String.new
     author = String.new
     count = 0
+    new_count = 0
 
     log_current_path if has_selector?(:css, "#allHighlightedBooks")
 
@@ -63,20 +63,34 @@ class KindleKeep
         author = row.find(:css, ".author").text.gsub(/^by /,'')
       elsif is_highlight?(row)
         body = row.find(:css, ".highlight").text
-        @books[title] << {
-          :title => title,
-          :author => author,
-          :highlight => body,
-          :guid => Digest::MD5.hexdigest(body)
-        }
+
+        # Create a unique id for this highlight
+        guid = Digest::MD5.hexdigest(body)
+
+        unless highlight_exists?(title, guid)
+          @books[title] << {
+            :title => title,
+            :author => author,
+            :highlight => body,
+            :guid => guid
+          }
+          new_count = new_count + 1
+        end
         count = count + 1
       end
       break if count >= limit
     end
-    puts "\n\nTotal highlights found: #{count.to_s}\n\n"
+    puts "\n\nTotal highlights found: #{count.to_s} (#{new_count} new)\n\n"
     # show_highlights
     write_highlights_to_file
-    write_summary_file
+    # write_summary_file
+  end
+
+  def highlight_exists?(title, guid)
+    filename = "highlights/#{title}.json"
+    return false unless file_exists?(filename)
+    existing = JSON.parse( IO.read(filename) )
+    existing.detect { |h| h['guid'] == guid }
   end
 
   # def show_highlights
@@ -87,11 +101,22 @@ class KindleKeep
   # end
 
   def write_highlights_to_file
-    Dir.mkdir("./highlights") unless directory_already_exists_at("./highlights")
+    Dir.mkdir("highlights") unless directory_already_exists_at("highlights")
+
     @books.each do |title, highlights|
-      File.open("./highlights/#{title}.json", 'w') do |file|
-        file.write(JSON.pretty_generate(highlights))
+
+      filename = "highlights/#{title}.json"
+
+      if file_exists?(filename)
+        existing = JSON.parse( IO.read(filename) )
+      else
+        existing = []
       end
+
+      File.open(filename, 'w') do |file|
+        file.write(JSON.pretty_generate(existing + highlights))
+      end
+
     end
   end
 
@@ -106,13 +131,17 @@ class KindleKeep
         highlights: highlights.size
       }
     end
-    File.open("./highlights/summary.json", 'w') do |file|
+    File.open("highlights/summary.json", 'w') do |file|
       file.write(JSON.pretty_generate(summary))
     end
   end
 
   def directory_already_exists_at(path)
     File.exists?(path) && File.directory?(path)
+  end
+
+  def file_exists?(file)
+    File.exists?(file)
   end
 
   def scroll_to_bottom(limit)
