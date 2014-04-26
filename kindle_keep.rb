@@ -1,5 +1,6 @@
 require 'json'
 require 'digest/md5'
+require 'pry'
 
 # =================================================
 # Class: Connects to amazon kindle, gets highlights
@@ -14,6 +15,10 @@ class KindleKeep
     new_session
     @session.visit(KINDLE_HOME)
     save_html_as_instance_variable
+    @start_time = Time.now
+    @highlight_count = 0
+    @timer = 0
+    @limit = 0
   end
 
   def log_in
@@ -29,29 +34,32 @@ class KindleKeep
       find(:css, '#ap_email').set(@email)
       choose("ap_signin_existing_radio")
       find(:css, '#ap_password').set(@pass)
-      puts "submit"
+      log_with_timestamp("submiting login form")
       find('#signInSubmit').click
-      puts "Logging in..."
+      log_with_timestamp("Logging in")
     end
 
     # Check if authentication was a success
-    puts login_successful? ? "You're in! authenticated." : "ERROR: Authentication failed"
+    log_with_timestamp(login_successful? ? "You're in! authenticated." : "ERROR: Authentication failed")
     log_current_path
     save_html_as_instance_variable
   end
 
   def get_highlights(limit)
-    puts "lets get some highlights, bitches!!!1\n"
+    log_with_timestamp("lets get some highlights, bitches!!!1")
     click_link "Your Highlights"
 
     title = String.new
     author = String.new
     count = 0
     new_count = 0
+    @limit = limit
 
     log_current_path if has_selector?(:css, "#allHighlightedBooks")
 
-    scroll_to_bottom(limit)
+    scroll_to_bottom
+
+    log_with_timestamp("Processing page... (this may take a minute)")
 
     # Each row can be a heading marking the start of a new book, or it can
     # be a highlight. So as we progress down the rows we need to keep track
@@ -67,57 +75,56 @@ class KindleKeep
         # Create a unique id for this highlight
         guid = Digest::MD5.hexdigest(body)
 
-        unless highlight_exists?(title, guid)
-          @books[title] << {
-            :title => title,
-            :author => author,
-            :highlight => body,
-            :guid => guid
-          }
-          new_count = new_count + 1
-        end
+        @books[title] << {
+          :title => title,
+          :author => author,
+          :highlight => body,
+          :guid => guid
+        }
+
         count = count + 1
+        log_with_timestamp("processed #{count}/#{@highlight_count}")
       end
-      break if count >= limit
+      break if count >= @limit
     end
-    puts "\n\nTotal highlights found: #{count.to_s} (#{new_count} new)\n\n"
+    log_with_timestamp("Total highlights found: #{count.to_s}")
     # show_highlights
     write_highlights_to_file
     # write_summary_file
   end
 
-  def highlight_exists?(title, guid)
-    filename = "highlights/#{title}.json"
-    return false unless file_exists?(filename)
-    existing = JSON.parse( IO.read(filename) )
-    existing.detect { |h| h['guid'] == guid }
+  def log_with_timestamp(msg)
+    puts "T+#{(Time.now - @start_time).to_int}s: #{msg}"
   end
-
-  # def show_highlights
-  #   @highlights.each do |highlight|
-  #     puts "#{ highlight[:highlight] }\n"
-  #     puts "- #{highlight[:title]}, #{highlight[:author]}\n\n"
-  #   end
-  # end
 
   def write_highlights_to_file
     Dir.mkdir("highlights") unless directory_already_exists_at("highlights")
 
     @books.each do |title, highlights|
 
+      log_with_timestamp("=========\nWriting highlights for '#{title}'")
+
       filename = "highlights/#{title}.json"
 
       if file_exists?(filename)
         existing = JSON.parse( IO.read(filename) )
+        highlights = remove_highlights_that_are_already_in_file(existing, highlights)
       else
         existing = []
       end
+
+      log_with_timestamp("Adding #{highlights.size} highlights to '#{title}'")
 
       File.open(filename, 'w') do |file|
         file.write(JSON.pretty_generate(existing + highlights))
       end
 
     end
+  end
+
+  def remove_highlights_that_are_already_in_file(existing, highlights)
+    existing_guids = existing.collect {|hl| hl['guid']}
+    highlights.delete_if { |high| existing_guids.include?(high['guid']) }
   end
 
   def write_summary_file
@@ -144,37 +151,59 @@ class KindleKeep
     File.exists?(file)
   end
 
-  def scroll_to_bottom(limit)
-    item_count = all(:css, ".highlight").count
-    new_count = 0
-    puts "found #{item_count} items"
-
-    puts "limit is: #{limit}"
-
-    begin
-      item_count = all(:css, ".highlight").count
-      puts "scrolling down..."
-      execute_script('window.scrollTo(0,document.body.scrollHeight)')
-      new_count = wait_for_new_highlights_to_load(item_count)
-    end while new_count > item_count && new_count < (limit+50)
-
-    puts "\n==========\nDone. Found #{item_count} items total.\n==========\n"
+  def scroll_to_bottom
+    update_highlight_count
+    scroll_down
+    while under_limit? && timer_less_than(20) do
+      timer_tick
+      if new_highlights?
+        update_highlight_count
+        log_with_timestamp("new highlights detected (#{@highlight_count}/#{@limit})\nresetting timer and scrolling down...")
+        reset_timer
+        scroll_down
+      end
+      unless under_limit?
+        log_with_timestamp("LIMIT REACHED")
+      end
+    end
+    log_with_timestamp("\n==========\nDone.\n==========\n")
   end
 
-  # Check to see if new highlights loaded every second. Break when the new
-  # highlights load of 10 seconds pass.
-  def wait_for_new_highlights_to_load(item_count)
-    new_count = 0
-    t = 0
-    begin
-      sleep 1
-      t = t + 1
-      new_count = all(:css, ".highlight").count
-      if new_count > item_count
-        puts "Found #{new_count - item_count} new items. #{new_count} total.\n"
-      end
-    end while new_count == item_count && t < 10
-    new_count
+  def under_limit?
+    @highlight_count < @limit
+  end
+
+  def update_highlight_count
+    @highlight_count = get_highlight_count
+  end
+
+  def new_highlights?
+    @highlight_count != get_highlight_count
+  end
+
+  def timer_less_than(limit)
+    @timer < limit
+  end
+
+  def timer_tick
+    @timer = @timer + 1
+    sleep 1
+    puts "tick: #{@timer}"
+  end
+
+  def reset_timer
+    @timer = 0
+  end
+
+  def scroll_down
+    execute_script('window.scrollTo(0,document.body.scrollHeight)')
+  end
+
+  # Takes the text of the last highlight on the page and hashes it. We can use
+  # this to compare highlights and determine when new highlights are added to
+  # the end of the page.
+  def get_highlight_count
+    all(:css, ".highlight").count
   end
 
   def is_book_title?(row)
@@ -234,7 +263,7 @@ private
   end
 
   def log_current_path
-    puts "#{@session.current_url}\n"
+    log_with_timestamp("#{@session.current_url}")
   end
 
 end
