@@ -6,3 +6,12 @@ TODO:
 - better organized code. services?
 - write to json files during the fetch process instead of all after
 - cache the opening and parsing of existing highlight files. readuce reads.
+- every 30 seconds wait for user input for a second and let them bring up a help
+  menu. they can stop scrolling and process all currently found, ask for a count
+  of the current number of messages on the page, etc
+
+
+- idea:
+    when its done, bring up a menu. let the user add highlights by book, or do
+    all, or get a count, or quick, if writing highlights errors out, let them
+    see the menu again to retry, etc. then when they want they can quit.

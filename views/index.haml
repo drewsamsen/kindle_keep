@@ -4,6 +4,9 @@
   %p.error Form error! Both fields required.
 
 %form{method: "post", action: "/connect"}
+  %p Local File:
+  %p
+    %input{type: "text", name: "file"}
   %p Amazon credentials:
   %p
     %input{type: "text", name: "email", placeholder: "email", value: (EMAIL rescue nil)}

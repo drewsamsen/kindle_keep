@@ -8,17 +8,18 @@ require 'pry'
 class KindleKeep
   include Singleton
 
-  def connect(email, pass)
-    @email, @pass = email, pass
+  def connect(email, pass, file)
+    @email, @pass, @file = email, pass, file
     @highlights   = Array.new
     @books        = Hash.new
-    new_session
-    @session.visit(KINDLE_HOME)
-    save_html_as_instance_variable
-    @start_time = Time.now
+    @start_time   = Time.now
     @highlight_count = 0
-    @timer = 0
-    @limit = 0
+    @timer        = 0
+    @limit        = 0
+
+    new_session
+    @session.visit(@file || KINDLE_HOME)
+    save_html_as_instance_variable
   end
 
   def log_in
@@ -43,11 +44,12 @@ class KindleKeep
     log_with_timestamp(login_successful? ? "You're in! authenticated." : "ERROR: Authentication failed")
     log_current_path
     save_html_as_instance_variable
+    click_link "Your Highlights"
+    log_current_path if has_selector?(:css, "#allHighlightedBooks")
   end
 
   def get_highlights(limit)
     log_with_timestamp("lets get some highlights, bitches!!!1")
-    click_link "Your Highlights"
 
     title = String.new
     author = String.new
@@ -55,9 +57,11 @@ class KindleKeep
     new_count = 0
     @limit = limit
 
-    log_current_path if has_selector?(:css, "#allHighlightedBooks")
+    scroll_to_bottom unless @file
 
-    scroll_to_bottom
+    update_highlight_count
+
+    log_with_timestamp("DONE SCROLLING: found #{@highlight_count}")
 
     log_with_timestamp("Processing page... (this may take a minute)")
 
@@ -65,32 +69,33 @@ class KindleKeep
     # be a highlight. So as we progress down the rows we need to keep track
     # of the current book for each highlight.
     all(:css, "#allHighlightedBooks > div").each do |row|
-      if is_book_title?(row)
-        title = row.find(:css, ".title").text
-        @books[title] = Array.new
-        author = row.find(:css, ".author").text.gsub(/^by /,'')
-      elsif is_highlight?(row)
-        body = row.find(:css, ".highlight").text
+      begin
+        if is_book_title?(row)
+          title = row.find(:css, ".title").text
+          @books[title] = Array.new
+          author = row.find(:css, ".author").text.gsub(/^by /,'')
+        elsif is_highlight?(row)
+          body = row.find(:css, ".highlight").text
 
-        # Create a unique id for this highlight
-        guid = Digest::MD5.hexdigest(body)
+          # Create a unique id for this highlight
+          guid = Digest::MD5.hexdigest(body)
 
-        @books[title] << {
-          :title => title,
-          :author => author,
-          :highlight => body,
-          :guid => guid
-        }
+          @books[title] << {
+            'title' => title,
+            'author' => author,
+            'highlight' => body,
+            'guid' => guid
+          }
 
-        count = count + 1
-        log_with_timestamp("processed #{count}/#{@highlight_count}")
+          count = count + 1
+          log_with_timestamp("processed #{count}/#{@highlight_count}")
+        end
+      rescue => error
+        binding.pry
       end
       break if count >= @limit
     end
-    log_with_timestamp("Total highlights found: #{count.to_s}")
-    # show_highlights
-    write_highlights_to_file
-    # write_summary_file
+    log_with_timestamp("Total highlights found: #{count}")
   end
 
   def log_with_timestamp(msg)
@@ -98,48 +103,43 @@ class KindleKeep
   end
 
   def write_highlights_to_file
+    log_with_timestamp("begining #write_highlights_to_file")
+
     Dir.mkdir("highlights") unless directory_already_exists_at("highlights")
 
     @books.each do |title, highlights|
 
-      log_with_timestamp("=========\nWriting highlights for '#{title}'")
-
-      filename = "highlights/#{title}.json"
-
-      if file_exists?(filename)
-        existing = JSON.parse( IO.read(filename) )
-        highlights = remove_highlights_that_are_already_in_file(existing, highlights)
-      else
-        existing = []
+      begin
+        filename = "highlights/#{title}.json"
+        if file_exists?(filename)
+          existing = JSON.parse( IO.read(filename) )
+          highlights = remove_highlights_that_are_already_in_file(existing, highlights)
+        else
+          existing = []
+        end
+      rescue => error
+        binding.pry
       end
 
-      log_with_timestamp("Adding #{highlights.size} highlights to '#{title}'")
+      log_with_timestamp("Adding #{highlights.size} new highlights to '#{title}'")
 
-      File.open(filename, 'w') do |file|
-        file.write(JSON.pretty_generate(existing + highlights))
+      begin
+        File.open(filename, 'w') do |file|
+          file.write(JSON.pretty_generate(existing + highlights))
+        end
+      rescue => error
+        binding.pry
       end
 
     end
   end
 
   def remove_highlights_that_are_already_in_file(existing, highlights)
-    existing_guids = existing.collect {|hl| hl['guid']}
-    highlights.delete_if { |high| existing_guids.include?(high['guid']) }
-  end
-
-  def write_summary_file
-    summary = {
-      total: @highlights.size,
-      books: Array.new
-    }
-    @books.each do |title, highlights|
-      summary.books << {
-        title: title,
-        highlights: highlights.size
-      }
-    end
-    File.open("highlights/summary.json", 'w') do |file|
-      file.write(JSON.pretty_generate(summary))
+    begin
+      existing_guids = existing.collect {|hl| hl['guid']}
+      highlights.delete_if { |high| existing_guids.include?(high['guid']) }
+    rescue => error
+      binding.pry
     end
   end
 
@@ -155,10 +155,10 @@ class KindleKeep
     update_highlight_count
     scroll_down
     while under_limit? && timer_less_than(20) do
-      timer_tick
+      timer_tick(3)
       if new_highlights?
         update_highlight_count
-        log_with_timestamp("new highlights detected (#{@highlight_count}/#{@limit})\nresetting timer and scrolling down...")
+        log_with_timestamp("new highlights detected (#{@highlight_count}/#{@limit})")
         reset_timer
         scroll_down
       end
@@ -166,7 +166,7 @@ class KindleKeep
         log_with_timestamp("LIMIT REACHED")
       end
     end
-    log_with_timestamp("\n==========\nDone.\n==========\n")
+    log_with_timestamp("\n==========\nDone scrolling page. #{@highlight_count} found.\n==========\n")
   end
 
   def under_limit?
@@ -185,10 +185,12 @@ class KindleKeep
     @timer < limit
   end
 
-  def timer_tick
-    @timer = @timer + 1
-    sleep 1
-    puts "tick: #{@timer}"
+  def timer_tick(interval)
+    interval.times do
+      @timer = @timer + 1
+      sleep 1
+      puts "tick: #{@timer}"
+    end
   end
 
   def reset_timer
@@ -196,6 +198,7 @@ class KindleKeep
   end
 
   def scroll_down
+    log_with_timestamp('scrolling down')
     execute_script('window.scrollTo(0,document.body.scrollHeight)')
   end
 
@@ -211,7 +214,7 @@ class KindleKeep
   end
 
   def is_highlight?(row)
-    row[:class].match(/yourHighlight/)
+    row[:class].match(/yourHighlight/) && (row.find(:css, ".highlight") rescue false)
   end
 
   # To save ourselves calling each of the capybara methods on the instance
