@@ -71,7 +71,7 @@ class KindleKeep
     all(:css, "#allHighlightedBooks > div").each do |row|
       begin
         if is_book_title?(row)
-          title = row.find(:css, ".title").text
+          title = row.find(:css, ".title").text.gsub(/\//,'-') # slashes will break since it will look for sub dirs
           @books[title] = Array.new
           author = row.find(:css, ".author").text.gsub(/^by /,'')
         elsif is_highlight?(row)
