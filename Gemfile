@@ -12,3 +12,5 @@ gem 'sinatra-initializers'
 gem 'capybara'
 gem 'poltergeist'
 gem 'phantomjs', :require => 'phantomjs/poltergeist'
+
+gem "haml", :require => 'haml'
